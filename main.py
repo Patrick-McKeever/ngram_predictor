@@ -5,7 +5,7 @@ import nltk
 nltk.download('brown')
 from nltk.corpus import brown
 
-# Turn off useless TF warnings.
+# Turn off useless tensorflow warnings.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import keras.utils.np_utils
@@ -17,7 +17,18 @@ import keras.preprocessing.text as kpp
 # Takes a second to initialize, better to just do it once.
 TOKENIZER = kpp.Tokenizer()
 
+'''
+Take a list of sentences, turn them into a list of ngrams. For each sentence,
+append to the list a list of words 1..n for all values of n less than the
+length of the sentence. E.g. "Je vous ai compris" -> [["Je"], ["Je", "vous"],
+["Je", "vous", "ai"], ["Je", "vous", "ai", "compris"].
+If this structure seems odd, I'm using it because it's what bidirectional LSTMs
+take as input: 
+towardsdatascience.com/nlp-text-generation-through-bidirectional-lstm-model-9af29da4e520
 
+@input sentences List of sentences
+@output (The aforementioned list, the length of the longest ngram in the list).
+'''
 def ParseText(sentences):
     TOKENIZER.fit_on_texts(sentences)
 
@@ -38,13 +49,19 @@ def ParseText(sentences):
 
     return corpus_ngrams, max_ngram_len
 
-
+'''
+Put a truncated version of the brown corpus through the ParseText func.
+@output (ngram list from brown, max ngram length of brown).
+'''
 def ParseBrown():
     plaintext_corpus = ' '.join(brown.words()[:10000]).lower()
     sentences = nltk.sent_tokenize(plaintext_corpus)
     return ParseText(sentences)
 
-
+'''
+Train a neural network to predict the next word of each sentence based
+on each previous word.
+'''
 def Train():
     corpus_ngrams, max_ngram_len = ParseBrown()
 
@@ -65,8 +82,15 @@ def Train():
     # number of (usually T/F) numerical values in a process called one-hot encoding
     # (see: https://hackernoon.com/what-is-one-hot-encoding-why-and-when-do-you-have-to-use-it-e3c6186d008f).
     dep_columns = len(TOKENIZER.word_index) + 1
+    # Essentially, we want the neural network to predict the final form of the
+    # sentence based on each previous form of the sentence.
     dep_vars = keras.utils.np_utils.to_categorical(seq_labels,
                                                    num_classes=dep_columns)
+
+    # This is a modified version of Namrata Kapoor's architecture
+    # towardsdatascience.com/nlp-text-generation-through-bidirectional-lstm-model-9af29da4e520
+    # I remove the dropout and LSTM layers after the bidirectional layer because
+    # they were taking too long to train.
     model = keras.Sequential()
     model.add(layers.Embedding(dep_columns, 64, input_length=max_ngram_len - 1))
     model.add(layers.Bidirectional(layers.LSTM(20)))
@@ -76,7 +100,13 @@ def Train():
 
     model.save('./model.tf', save_format='tf')
 
-
+'''
+Use the model to finish a sentence.
+@input seed The start of a sentence to finish.
+@input model A sequential model which can finish a given sentence.
+@input num_words The number of words to append to the existing sentence.
+@output The completed sentence.
+'''
 def GenFromPrompt(seed, model, num_words):
     corpus_ngrams, max_ngram_len = ParseBrown()
 
@@ -93,7 +123,10 @@ def GenFromPrompt(seed, model, num_words):
         seed += " " + output_word
     return seed
 
-
+'''
+If user runs as "python3 main.py train", train the model.
+Otherwise, let them suggest prompts for the model and get results.
+'''
 def Main():
     # TODO: use argparse for this.
     if len(sys.argv) > 1 and sys.argv[1] == 'train':
