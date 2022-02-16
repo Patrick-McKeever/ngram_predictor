@@ -54,7 +54,7 @@ Put a truncated version of the brown corpus through the ParseText func.
 @output (ngram list from brown, max ngram length of brown).
 '''
 def ParseBrown():
-    plaintext_corpus = ' '.join(brown.words()[:10000]).lower()
+    plaintext_corpus = ' '.join(brown.words()[:50000]).lower()
     sentences = nltk.sent_tokenize(plaintext_corpus)
     return ParseText(sentences)
 
@@ -108,11 +108,11 @@ Use the model to finish a sentence.
 @output The completed sentence.
 '''
 def GenFromPrompt(seed, model, num_words):
-    corpus_ngrams, max_ngram_len = ParseBrown()
+    matrix_rows = model.get_layer(index=0).get_input_at(0).get_shape().as_list()[1]
 
     for _ in range(num_words):
         token_list = TOKENIZER.texts_to_sequences([seed])[0]
-        token_list = pad_sequences([token_list], maxlen=max_ngram_len - 1, padding='pre')
+        token_list = pad_sequences([token_list], maxlen=matrix_rows, padding='pre')
         predicted_x = model.predict(token_list, verbose=0)
         predicted = np.argmax(predicted_x, axis=1)
         output_word = ""
@@ -136,16 +136,20 @@ def Main():
         sys.exit('\nTrained model does not exist in this directory ("model.tf" not found).\n' 
                  'To train model, run "python3 main.py train".')
 
+    # The tokenizer must have some state in order for us to interact with the model.
+    # It can only map words to vectors after parsing the text.
+    ParseBrown()
     model = keras.models.load_model('model.tf')
     while True:
         prompt = input('Enter prompt (q to quit):\t')
+        if prompt == 'q':
+            break
+
         try:
             num_words = int(input('Enter num words to generate:\t'))
         except ValueError:
             num_words = 5
 
-        if prompt == 'q':
-            break
         print(f'Model-generated text: {GenFromPrompt(prompt, model, num_words)}')
 
 
